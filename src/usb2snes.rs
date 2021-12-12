@@ -1,6 +1,6 @@
 pub mod usb2snes {
 
-use websocket::{ClientBuilder, Message, OwnedMessage};
+use websocket::{ClientBuilder, Message};
 use websocket::sync::stream::TcpStream;
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
@@ -16,6 +16,7 @@ use strum_macros::Display;
         Reset,
         Menu,
 
+        List,
         PutFile,
         GetFile,
         Rename,
@@ -29,7 +30,7 @@ use strum_macros::Display;
 
     pub struct Infos {
         pub version : String,
-        pub devType : String,
+        pub dev_type : String,
         pub game : String,
         pub flags : Vec<String>
     }
@@ -46,10 +47,20 @@ use strum_macros::Display;
     struct USB2SnesResult {
         Results : Vec<String>
     }
-    
+
+    #[derive(PartialEq)]
+    pub enum USB2SnesFileType {
+        File = 0,
+        Dir = 1
+    }
+    pub struct USB2SnesFileInfo {
+        pub name : String,
+        pub file_type : USB2SnesFileType
+    }
     
     pub struct SyncClient {
         client : websocket::sync::Client<TcpStream>,
+        devel : bool
     }
     impl SyncClient {
         pub fn connect() -> SyncClient {
@@ -57,18 +68,33 @@ use strum_macros::Display;
                  client : ClientBuilder::new("ws://localhost:23074")
                 .unwrap()
                 .connect_insecure()
+                .unwrap(),
+                devel : false
+            }
+        }
+        pub fn connect_with_devel() -> SyncClient {
+            SyncClient {
+                client : ClientBuilder::new("ws://localhost:23074")
                 .unwrap()
+                .connect_insecure()
+                .unwrap(),
+                devel : true
             }
         }
         fn send_command(&mut self, command : Command, args : Vec<String>) {
-            println!("Send command : {:?}", command);
+            if self.devel {
+                println!("Send command : {:?}", command);
+            }
             let query = USB2SnesQuery {
                 Opcode : command.to_string(),
                 Space : None,
                 Flags : vec![],
                 Operands : args
             };
-            let json = serde_json::to_string(&query).unwrap();
+            let json = serde_json::to_string_pretty(&query).unwrap();
+            if self.devel {
+                println!("{}", json);
+            }
             let message = Message::text(json);
             self.client.send_message(&message).unwrap();
         }
@@ -80,17 +106,21 @@ use strum_macros::Display;
                 websocket::OwnedMessage::Text(value) => {textreply = value;}
                 _ => {println!("Error getting a reply");}
             };
+            if self.devel {
+                println!("Reply:");
+                println!("{}", textreply);
+            }
             return serde_json::from_str(&textreply).unwrap();
         }
-        pub fn setName(&mut self, name : String) {
+        pub fn set_name(&mut self, name : String) {
             self.send_command(Command::Name, vec![name]);
         }
-        pub fn appVersion(&mut self) -> String {
+        pub fn app_version(&mut self) -> String {
             self.send_command(Command::AppVersion, vec![]);
             let usbreply = self.get_reply();
             return usbreply.Results[0].to_string();
         }
-        pub fn listDevice(&mut self) -> Vec<String> {
+        pub fn list_device(&mut self) -> Vec<String> {
             self.send_command(Command::DeviceList, vec![]);
             let usbreply = self.get_reply();
             return usbreply.Results;
@@ -103,7 +133,7 @@ use strum_macros::Display;
             self.send_command(Command::Info, vec![]);
             let usbreply = self.get_reply();
             let info : Vec<String> =  usbreply.Results;
-            Infos { version: info[0].clone(), devType: info[1].clone(), game: info[2].clone(), flags: (info[3..].to_vec()) }
+            Infos { version: info[0].clone(), dev_type: info[1].clone(), game: info[2].clone(), flags: (info[3..].to_vec()) }
         }
         pub fn reset(&mut self) {
             self.send_command(Command::Reset, vec![]);
@@ -115,6 +145,22 @@ use strum_macros::Display;
             self.send_command(Command::Boot, vec![toboot.clone()]);
         }
 
+        pub fn ls(&mut self, path : &String) -> Vec<USB2SnesFileInfo> {
+            self.send_command(Command::List,vec![path.to_string()]);
+            let usbreply = self.get_reply();
+            let vec_info = usbreply.Results;
+            let mut toret:Vec<USB2SnesFileInfo> = vec![];
+            let mut i =  0;
+            while i < vec_info.len() {
+                let info : USB2SnesFileInfo = USB2SnesFileInfo {
+                    file_type : if vec_info[i] == "1" {USB2SnesFileType::File} else {USB2SnesFileType::Dir},
+                    name : vec_info[i + 1].to_string()
+                };
+                toret.push(info);
+                i += 2;
+            }
+            return toret;
+        }
         pub fn send_file(&mut self, path : &String, data : Vec<u8>) {
             self.send_command(Command::PutFile, vec![path.clone()]);
             let mut start = 0;
@@ -130,7 +176,8 @@ use strum_macros::Display;
         }
         pub fn get_file(&mut self, path : &String) -> Vec<u8> {
             self.send_command(Command::GetFile, vec![path.clone()]);
-            let size = self.get_reply().Results[0].parse::<usize>().unwrap();
+            let string_hex = self.get_reply().Results[0].to_string();
+            let size = usize::from_str_radix(&string_hex.to_string(), 16).unwrap();
             let mut data : Vec<u8> = vec![];
             data.reserve(size);
             loop {

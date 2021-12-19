@@ -1,9 +1,32 @@
+/*
+ * Copyright (c) 2021 Sylvain "Skarsnik" Colinet
+ *
+ * This file is part of the usb2snes-cli project.
+ * (see https://github.com/usb2snes/usb2snes-cli).
+ *
+ * usb2snes-cli is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * usb2snes-cli is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with QUsb2Snes.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+
 use structopt::StructOpt;
 use std::thread::sleep;
 use std::io::prelude::*;
 use std::fs::File;
 use std::fs;
 use std::time::Duration;
+use scan_fmt::scan_fmt;
+
 mod usb2snes;
 
 
@@ -20,6 +43,9 @@ struct Opt {
 
     #[structopt(long, help = "Use the specified device")]
     device: Option<String>,
+
+    #[structopt(long = "get-address", help = "Read a usb2snes address, syntax address_in_hex:size")]
+    get_address : Option<String>,
 
     #[structopt(long, help = "Reset the game running on the device")]
     reset: bool,
@@ -95,6 +121,21 @@ fn main() {
             println!("The device does not support control command (menu/reset/boot)");
             std::process::exit(1);
         }
+        if opt.get_address != None {
+            let toget = opt.get_address.unwrap();
+            if let Ok((address, size)) = scan_fmt!(&toget, "{x}:{d}", [hex u32], usize) {
+                let data = usb2snes.get_address(address, size);
+                let mut i = 0;
+                while i < data.len() {
+                    if i % 16 == 0 {
+                        println!();
+                        print!("{:02X} : ", i);
+                    }
+                    print!("{:02X} ", data[i]);
+                    i += 1;
+                }
+            }
+        }
         if opt.menu {
             usb2snes.menu();
         }
@@ -132,7 +173,7 @@ fn main() {
                 Ok(file) => file,
                 Err(err) => panic!("Probleme opening the file {:?} : {:?}", path, err),
             };
-            f.write_all(&data);
+            f.write_all(&data).expect("Can't write the data to the file");
         }
     }
 }

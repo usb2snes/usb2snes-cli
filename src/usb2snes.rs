@@ -1,3 +1,24 @@
+/*
+ * Copyright (c) 2021 Sylvain "Skarsnik" Colinet
+ *
+ * This file is part of the usb2snes-cli project.
+ * (see https://github.com/usb2snes/usb2snes-cli).
+ *
+ * usb2snes-cli is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * usb2snes-cli is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with QUsb2Snes.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+
 pub mod usb2snes {
 
 use websocket::{ClientBuilder, Message};
@@ -6,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
     #[derive(Display, Debug)]
+    #[allow(dead_code)]
     pub enum Command {
         AppVersion,
         Name,
@@ -20,8 +42,12 @@ use strum_macros::Display;
         PutFile,
         GetFile,
         Rename,
-        Remove
+        Remove,
+
+        GetAddress
     }
+    #[derive(Display, Debug)]
+    #[allow(dead_code)]
     pub enum Space {
         None,
         SNES,
@@ -36,6 +62,7 @@ use strum_macros::Display;
     }
 
     #[derive(Serialize)]
+    #[allow(non_snake_case)]
     struct USB2SnesQuery {
         Opcode: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,6 +71,7 @@ use strum_macros::Display;
         Operands: Vec<String>
     }
     #[derive(Deserialize)]
+    #[allow(non_snake_case)]
     struct USB2SnesResult {
         Results : Vec<String>
     }
@@ -82,12 +110,19 @@ use strum_macros::Display;
             }
         }
         fn send_command(&mut self, command : Command, args : Vec<String>) {
+            self.send_command_with_space(command, None, args)
+        }
+        fn send_command_with_space(&mut self, command : Command, space : Option<Space>,  args : Vec<String>) {
             if self.devel {
                 println!("Send command : {:?}", command);
             }
+            let nspace : Option<String> = match space {
+                None => None,
+                Some(sp) => Some(sp.to_string())
+            };
             let query = USB2SnesQuery {
                 Opcode : command.to_string(),
-                Space : None,
+                Space : nspace,
                 Flags : vec![],
                 Operands : args
             };
@@ -98,6 +133,7 @@ use strum_macros::Display;
             let message = Message::text(json);
             self.client.send_message(&message).unwrap();
         }
+
         fn get_reply(&mut self) -> USB2SnesResult {
             let reply = self.client.recv_message().unwrap();
             let mut textreply : String = String::from("");
@@ -162,7 +198,7 @@ use strum_macros::Display;
             return toret;
         }
         pub fn send_file(&mut self, path : &String, data : Vec<u8>) {
-            self.send_command(Command::PutFile, vec![path.clone()]);
+            self.send_command(Command::PutFile, vec![path.to_string()]);
             let mut start = 0;
             let mut stop = 1024;
             while stop <= data.len() {
@@ -190,7 +226,23 @@ use strum_macros::Display;
                     break;
                 }
             }
-            return data;
+            data
+        }
+        pub fn get_address(&mut self, address : u32, size : usize) -> Vec<u8> {
+            self.send_command_with_space(Command::GetAddress, Some(Space::SNES), vec![format!("{:x}", address), format!("{:x}", size)]);
+            let mut data : Vec<u8> = vec![];
+            data.reserve(size);
+            loop {
+                let reply = self.client.recv_message().unwrap();
+                match reply {
+                    websocket::OwnedMessage::Binary(msgdata) => {data.extend(&msgdata);}
+                    _ => {println!("Error getting a reply");}
+                }
+                if data.len() == size {
+                    break;
+                }
+            }
+            data
         }
     }
 

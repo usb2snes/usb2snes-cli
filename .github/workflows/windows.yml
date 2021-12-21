@@ -33,8 +33,7 @@ jobs:
           submodules : true
       -
         name: build      
-        run: | 
-            run: cargo build --release --verbose
+        run:  cargo build --release --verbose
       -
         name: Upload exe
         uses: actions/upload-artifact@v2

@@ -33,8 +33,8 @@ mod usb2snes;
 #[derive(StructOpt, Debug)]
 #[structopt(name = "usb2snes-cli", about = "usb2snes-cli --boot /games/Super Metroid.smc")]
 struct Opt {
-    #[structopt(long, help = "Operate in silent mode")]
-    quiet:  Option<bool>,
+    //#[structopt(long, help = "Operate in silent mode")]
+    //quiet:  Option<bool>,
 
     #[structopt(long, name = "list", help = "List the device available")]
     list_device: bool,

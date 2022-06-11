@@ -201,7 +201,7 @@ use strum_macros::Display;
             self.send_command(Command::PutFile, vec![path.to_string(), format!("{:x}", data.len())]);
             let mut start = 0;
             let mut stop = 1024;
-            while stop <= data.len() {
+            while start < data.len() {
                 self.client.send_message(&Message::binary(&data[start..stop])).unwrap();
                 start += 1024;
                 stop += 1024;

@@ -198,7 +198,7 @@ use strum_macros::Display;
             return toret;
         }
         pub fn send_file(&mut self, path : &String, data : Vec<u8>) {
-            self.send_command(Command::PutFile, vec![path.to_string()]);
+            self.send_command(Command::PutFile, vec![path.to_string(), format!("{:x}", data.len())]);
             let mut start = 0;
             let mut stop = 1024;
             while stop <= data.len() {

@@ -201,7 +201,7 @@ use strum_macros::Display;
             self.send_command(Command::PutFile, vec![path.to_string(), format!("{:x}", data.len())]);
             let mut start = 0;
             let mut stop = 1024;
-            while stop <= data.len() {
+            while start < data.len() {
                 self.client.send_message(&Message::binary(&data[start..stop])).unwrap();
                 start += 1024;
                 stop += 1024;
@@ -227,6 +227,9 @@ use strum_macros::Display;
                 }
             }
             data
+        }
+        pub fn remove_path(&mut self, path : &String) {
+            self.send_command(Command::Remove, vec![path.clone()]);
         }
         pub fn get_address(&mut self, address : u32, size : usize) -> Vec<u8> {
             self.send_command_with_space(Command::GetAddress, Some(Space::SNES), vec![format!("{:x}", address), format!("{:x}", size)]);

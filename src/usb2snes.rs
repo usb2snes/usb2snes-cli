@@ -228,6 +228,9 @@ use strum_macros::Display;
             }
             data
         }
+        pub fn remove_path(&mut self, path : &String) {
+            self.send_command(Command::Remove, vec![path.clone()]);
+        }
         pub fn get_address(&mut self, address : u32, size : usize) -> Vec<u8> {
             self.send_command_with_space(Command::GetAddress, Some(Space::SNES), vec![format!("{:x}", address), format!("{:x}", size)]);
             let mut data : Vec<u8> = vec![];

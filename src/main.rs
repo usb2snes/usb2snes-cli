@@ -66,6 +66,9 @@ struct Opt {
     #[structopt(long = "download", name = "File to download")]
     file_to_download: Option<String>,
 
+    #[structopt(long = "rm", name = "Path on the device of a file to remove")]
+    path_to_remove: Option<String>,
+
     #[structopt(long = "devel", name = "Show all the transaction with the usb2snes server")]
     devel: bool
 }
@@ -174,6 +177,11 @@ fn main() {
                 Err(err) => panic!("Probleme opening the file {:?} : {:?}", path, err),
             };
             f.write_all(&data).expect("Can't write the data to the file");
+        }
+        if opt.path_to_remove != None {
+            let path:String = opt.path_to_remove.unwrap();
+            println!("Removing : {:?}", path);
+            usb2snes.remove_path(&path);
         }
     }
 }

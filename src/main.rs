@@ -24,8 +24,10 @@ use std::thread::sleep;
 use std::io::prelude::*;
 use std::fs::File;
 use std::fs;
+use std::path::Path;
 use std::time::Duration;
 use scan_fmt::scan_fmt;
+use crate::usb2snes::usb2snes::SyncClient;
 
 mod usb2snes;
 
@@ -70,7 +72,25 @@ struct Opt {
     path_to_remove: Option<String>,
 
     #[structopt(long = "devel", name = "Show all the transaction with the usb2snes server")]
-    devel: bool
+    devel: bool,
+
+    #[structopt(subcommand)]
+    command: Option<Command>
+}
+
+#[derive(StructOpt, Debug)]
+enum Command {
+    #[structopt(name = "upload-latest-sfc", about = "Find the most recent .sfc file in local-source dir, and upload it to target-dir on the device")]
+    UploadLatestSfc {
+        #[structopt(name = "local-source-dir", help = "Directory on this computer to get the latest .sfc out of, e.g. your downloads folder")]
+        local_source_dir: String,
+
+        #[structopt(name = "target-dir", help = "Directory on the device to put the .sfc into")]
+        target_dir: String,
+
+        #[structopt(long = "wipe-target-dir", help = "Delete .sfc files in target-dir before copying a new one there")]
+        wipe_target_dir: bool
+    }
 }
 
 fn main() {
@@ -162,9 +182,8 @@ fn main() {
                 std::process::exit(1);
             }
             let local_path = opt.file_to_upload.unwrap();
-            let data = fs::read(local_path).expect("Error opening the file or reading the content");
-            let path = opt.path.unwrap();
-            usb2snes.send_file(&path, data);
+            let snes_path = opt.path.unwrap();
+            upload_file(local_path, snes_path, &mut usb2snes);
         }
         if opt.file_to_download != None {
             let path:String = opt.file_to_download.unwrap();
@@ -174,7 +193,7 @@ fn main() {
             let f = File::create(local_path);
             let mut f = match f {
                 Ok(file) => file,
-                Err(err) => panic!("Probleme opening the file {:?} : {:?}", path, err),
+                Err(err) => panic!("Problem opening the file {:?} : {:?}", path, err),
             };
             f.write_all(&data).expect("Can't write the data to the file");
         }
@@ -183,5 +202,67 @@ fn main() {
             println!("Removing : {:?}", path);
             usb2snes.remove_path(&path);
         }
+        match opt.command {
+            Some(Command::UploadLatestSfc {local_source_dir, target_dir, wipe_target_dir  }) => {
+                    do_upload_latest_sfc(&mut usb2snes, local_source_dir, target_dir, wipe_target_dir).unwrap();
+            },
+            None => {}
+        }
+
     }
+}
+
+fn upload_file(local_path:String, snes_path:String, usb2snes: &mut SyncClient) {
+    print!("Sending file {} to snes at {}", local_path, snes_path);
+    let data = fs::read(local_path).expect("Error opening the file or reading the content");
+    usb2snes.send_file(&snes_path, data);
+}
+
+fn do_upload_latest_sfc(usb2snes: &mut SyncClient, local_source_dir:String, target_dir:String, wipe_target_dir:bool)
+                        -> Result<(), Box<dyn std::error::Error>> {
+    println!("Uploading latest sfc from {:?} to {:?}. with wipe-target-dir={:?}",
+             local_source_dir,
+             target_dir,
+             wipe_target_dir);
+    let local_dir_path = Path::new(&local_source_dir);
+
+    let mut newest_seconds_since_mod = u64::MAX;
+    let mut newest_file_name:Option<String> = None;
+    for entry in fs::read_dir(local_dir_path)
+        .expect(&format!("Can't read the given local dir {:?}", local_source_dir)) {
+        let entry = entry?;
+
+        let file_path = entry.path();
+        let f_name = entry.file_name().to_string_lossy().into_owned();
+        if !f_name.ends_with(".sfc") {
+            continue
+        }
+
+        let metadata = fs::metadata(&file_path)?;
+        let seconds_since_mod = metadata.modified()?.elapsed()?.as_secs();
+        if seconds_since_mod < newest_seconds_since_mod {
+            newest_seconds_since_mod = seconds_since_mod;
+            newest_file_name = Some(f_name);
+        }
+    }
+    let file_name_to_send = newest_file_name.expect("No sfc found in local dir");
+    println!("Newest sfc file found: {:?}", file_name_to_send);
+
+    if wipe_target_dir {
+        let roms = usb2snes.ls(&target_dir);
+        for rom in roms {
+            if rom.name.ends_with(".sfc") {
+                let snes_path = format!("{}/{}", target_dir, rom.name);
+                println!("Deleting snes file {}", snes_path);
+                usb2snes.remove_path(&snes_path);
+            }
+        }
+
+    }
+
+    let local_path:String = format!("{}/{}", local_source_dir, file_name_to_send);
+    let snes_path:String = format!("{}/{}", target_dir, file_name_to_send);
+    upload_file(local_path, snes_path, usb2snes);
+
+    Ok(())
 }

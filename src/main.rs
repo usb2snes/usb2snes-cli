@@ -19,15 +19,15 @@
  */
 
 use scan_fmt::scan_fmt;
-use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{error::Error, fs};
+
 use structopt::StructOpt;
 
 use rusb2snes::{SyncClient, USB2SnesFileType};
-use tungstenite::Error;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -88,7 +88,7 @@ struct Opt {
     devel: bool,
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
 
     let mut usb2snes;
@@ -99,7 +99,7 @@ fn main() -> Result<(), Error> {
     }
     println!("Connected to the Usb2snes server");
     usb2snes.set_name(String::from("usb2snes-cli"))?;
-    println!("Server version is : {:?}", usb2snes.app_version());
+    println!("Server version is : {}", usb2snes.app_version()?);
 
     let mut devices = usb2snes.list_device()?;
 
@@ -111,8 +111,7 @@ fn main() -> Result<(), Error> {
         }
     }
     if devices.is_empty() {
-        println!("No device found");
-        std::process::exit(1);
+        return Err("No Device Found.".into());
     } else {
         if opt.list_device {
             println!("Listing devices :");
@@ -125,12 +124,16 @@ fn main() -> Result<(), Error> {
                     dev, info.dev_type, info.version, info.game, info.flags
                 );
             }
-            std::process::exit(0);
+            return Ok(());
         }
-        let device = opt.device.unwrap_or_else(|| devices[0].clone());
+
+        let device = match opt.device {
+            Some(d) => d,
+            None => return Err("Error parsing device".into()),
+        };
+        // let device = opt.device.unwrap_or_else(|| devices[0].clone());
         if !devices.contains(&device) {
-            println!("Can't find the specified device <{:?}>", &device);
-            std::process::exit(1);
+            return Err(format!("Can't find the specified device <{:?}>", &device).into());
         }
         usb2snes.attach(&device)?;
         let info = usb2snes.info()?;
@@ -139,14 +142,12 @@ fn main() -> Result<(), Error> {
                 || opt.file_to_upload.is_some()
                 || opt.ls_path.is_some())
         {
-            println!("The device does not support file commands");
-            std::process::exit(1);
+            return Err("The device does not support file commands".into());
         }
         if info.flags.contains(&String::from("NO_CONTROL_CMD"))
             && (opt.menu || opt.reset || opt.boot.is_some())
         {
-            println!("The device does not support control command (menu/reset/boot)");
-            std::process::exit(1);
+            return Err("The device does not support control command (menu/reset/boot)".into());
         }
         if opt.get_address.is_some() {
             let toget = opt.get_address.unwrap();
@@ -193,8 +194,7 @@ fn main() -> Result<(), Error> {
         }
         if opt.file_to_upload.is_some() {
             if opt.path.is_none() {
-                println!("You need to provide a --path to upload a file");
-                std::process::exit(1);
+                return Err("You need to provide a --path to upload a file".into());
             }
             let local_path = opt.file_to_upload.unwrap();
             let data = fs::read(local_path).expect("Error opening the file or reading the content");
@@ -202,8 +202,14 @@ fn main() -> Result<(), Error> {
             usb2snes.send_file(&path, data)?;
         }
         if opt.file_to_download.is_some() {
-            let path: String = opt.file_to_download.unwrap();
-            let local_path = path.split('/').last().unwrap();
+            let path: String = match opt.file_to_download {
+                Some(p) => p,
+                None => return Err("File Not Found".into()),
+            };
+            let local_path = match path.split('/').next_back() {
+                Some(p) => p,
+                None => return Err("Could not parse local_path.".into()),
+            };
             println!("Downloading : {:?} , local file {:?}", path, local_path);
             let data = usb2snes.get_file(&path)?;
             let f = File::create(local_path);

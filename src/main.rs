@@ -19,15 +19,16 @@
  */
 
 use scan_fmt::scan_fmt;
-use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{error::Error, fs};
+
 use structopt::StructOpt;
 
 use rusb2snes::{SyncClient, USB2SnesFileType};
-use tungstenite::Error;
+// use tungstenite::Error;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -88,7 +89,7 @@ struct Opt {
     devel: bool,
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
 
     let mut usb2snes;
